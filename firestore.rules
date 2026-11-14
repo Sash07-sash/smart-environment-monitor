@@ -1,0 +1,31 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // User profiles: strictly accessible by the owner
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Sensor telemetry: readable & writable by web clients and ESP32 nodes
+    match /sensorData/{docId} {
+      allow read, write: if true;
+    }
+
+    // Appliances: bulb and actuators
+    match /appliances/{docId} {
+      allow read, write: if true;
+    }
+
+    // Settings: mode & ldr threshold
+    match /settings/{docId} {
+      allow read, write: if true;
+    }
+
+    // Fallback
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
