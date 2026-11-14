@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard — Aether</title>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore-compat.js"></script>
+<link rel="stylesheet" href="shared.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🌐</text></svg>">
+</head>
+<body>
+
+<div class="dash">
+  <div class="dash-top">
+    <div class="dash-brand">
+      <div class="dash-title"><span class="brand-mark"></span>Aether</div>
+      <div class="live-chip"><span class="live-dot"></span>LIVE TELEMETRY</div>
+    </div>
+    <div class="dash-user">
+      <span id="userEmail"></span>
+      <button class="logout" onclick="handleLogout()">Sign Out</button>
+    </div>
+  </div>
+
+  <div class="dash-body">
+    <div class="section-label">ENVIRONMENTAL TELEMETRY</div>
+    <div class="sensor-row">
+      <div class="sensor-card">
+        <div class="sensor-top">
+          <span class="sensor-label">Temperature</span>
+          <div class="sensor-icon ic-temp">🌡️</div>
+        </div>
+        <div class="sensor-reading"><span class="sensor-num" id="tempValue">—</span><span class="sensor-unit">°C</span></div>
+        <div class="sensor-meta" id="tempTime">awaiting data</div>
+      </div>
+      <div class="sensor-card">
+        <div class="sensor-top">
+          <span class="sensor-label">Humidity</span>
+          <div class="sensor-icon ic-humid">💧</div>
+        </div>
+        <div class="sensor-reading"><span class="sensor-num" id="humidValue">—</span><span class="sensor-unit">%</span></div>
+        <div class="sensor-meta" id="humidTime">awaiting data</div>
+      </div>
+      <div class="sensor-card">
+        <div class="sensor-top">
+          <span class="sensor-label">Ambient Light</span>
+          <div class="sensor-icon ic-light">💡</div>
+        </div>
+        <div class="sensor-reading"><span class="sensor-num" id="ldrValue">—</span><span class="sensor-unit">lux</span></div>
+        <div class="sensor-meta" id="ldrTime">awaiting data</div>
+      </div>
+    </div>
+
+    <div class="section-label">HARDWARE ACTUATION &amp; CONTROL</div>
+    <div class="control-grid">
+      <div class="control-card">
+        <div class="bulb-header"><h3>💡 Appliance Bulb</h3></div>
+        <div class="bulb-visual"><div class="bulb-orb" id="bulbOrb">💡</div></div>
+        <div class="bulb-status-text">Status: <b id="bulbStatusText">OFF</b></div>
+        <div class="toggle-row"><button class="toggle" id="bulbToggle" onclick="toggleBulb()"></button></div>
+      </div>
+
+      <div class="control-card">
+        <div class="bulb-header"><h3>⚙️ Automation Engine</h3></div>
+        <div class="mode-tabs">
+          <button class="mode-tab active" id="tabManual" onclick="setMode('manual')">Manual Mode</button>
+          <button class="mode-tab" id="tabAuto" onclick="setMode('automatic')">Automatic Mode</button>
+        </div>
+        <div class="threshold-panel" id="thresholdPanel">
+          <div class="threshold-row">
+            <label>Light Trigger Threshold</label>
+            <span class="threshold-val" id="threshVal">500</span>
+          </div>
+          <input type="range" id="ldrThreshold" min="0" max="4095" value="500" oninput="onThresholdInput()" onchange="updateThreshold()">
+          <div class="auto-status">Bulb automatically turns ON when ambient light drops below threshold</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-label">TELEMETRY AUDIT LOG</div>
+    <div class="table-card">
+      <div class="table-head">
+        <h3>Recent Sensor Logs</h3>
+        <button class="export-btn" onclick="exportToCSV()">↓ Export CSV</button>
+      </div>
+      <div class="empty-state" id="tableLoading"><div class="spinner"></div>Loading sensor data…</div>
+      <table id="dataTable" style="display:none;">
+        <thead><tr><th>Timestamp</th><th>Temp</th><th>Humidity</th><th>Light</th><th>Bulb</th><th>Mode</th></tr></thead>
+        <tbody id="dataTableBody"></tbody>
+      </table>
+    </div>
+
+    <div class="section-label">DEVELOPER &amp; EVALUATION SUITE</div>
+    <div class="control-card" style="margin-bottom: 40px;">
+      <div class="bulb-header">
+        <h3>🧪 Hardware Simulation Console</h3>
+      </div>
+      <p style="font-size: 0.86rem; color: var(--text-dim); margin-bottom: 16px;">
+        Test and demonstrate real-time Cloud Firestore updates, automated threshold switching, and telemetry logging when the physical ESP32 node is offline.
+      </p>
+      <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+        <button class="btn btn-ember" style="padding: 11px 22px; font-size: 0.88rem;" onclick="simulateSensorReading()">
+          ⚡ Push Live Sensor Reading
+        </button>
+        <button class="export-btn" style="padding: 11px 22px; font-size: 0.88rem;" onclick="seedSampleData()">
+          🌱 Seed 10 Log Entries
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyDfTBoWyVvxItwMqBDAFZdOi_kvPa7agBY",
+    authDomain: "smart-environment-monito-3c43f.firebaseapp.com",
+    projectId: "smart-environment-monito-3c43f",
+    storageBucket: "smart-environment-monito-3c43f.firebasestorage.app",
+    messagingSenderId: "301278903288",
+    appId: "1:301278903288:web:7fec37baef0d22ba2d740d"
+  };
+  firebase.initializeApp(firebaseConfig);
+  const auth = firebase.auth();
+  const db = firebase.firestore();
+
+  let currentUser = null;
+  let currentMode = 'manual';
+  let currentThreshold = 500;
+  let currentBulbState = false;
+  let sensorDataCache = [];
+
+  // Protect this page — redirect to login if not authenticated
+  const isDemo = new URLSearchParams(window.location.search).get('demo') === '1';
+  auth.onAuthStateChanged(user => {
+    if(user){
+      currentUser = user;
+      document.getElementById('userEmail').textContent = user.email;
+      loadDashboardData();
+    } else if(isDemo){
+      document.getElementById('userEmail').textContent = 'satheesh@protosem.tech';
+      loadDashboardData();
+    } else {
+      window.location.href = 'login.html';
+    }
+  });
+
+  function handleLogout(){
+    auth.signOut().then(() => { window.location.href = 'landing.html'; });
+  }
+
+  function loadDashboardData(){
+    // 1. Settings live listener (mode & ldrThreshold)
+    db.collection('settings').doc('config').onSnapshot(doc => {
+      if(doc && doc.exists){
+        const d = doc.data();
+        currentMode = d.mode || 'manual';
+        currentThreshold = (d.ldrThreshold !== undefined) ? d.ldrThreshold : 500;
+        document.getElementById('ldrThreshold').value = currentThreshold;
+        document.getElementById('threshVal').textContent = currentThreshold;
+        updateModeUI();
+      }
+    }, err => console.warn('Settings listener error:', err));
+
+    // 2. Bulb state live listener
+    db.collection('appliances').doc('bulb').onSnapshot(doc => {
+      if(doc && doc.exists){
+        const d = doc.data();
+        currentBulbState = !!(d.state ?? d.bulbState);
+        updateBulbUI(currentBulbState);
+      }
+    }, err => console.warn('Bulb listener error:', err));
+
+    // 3. Live latest sensor reading
+    db.collection('sensorData').doc('latest').onSnapshot(doc => {
+      if(doc && doc.exists){
+        const d = doc.data();
+        updateSensorDisplay(d);
+        if(typeof d.ldr === 'number'){
+          checkAutomation(d.ldr);
+        }
+      }
+    }, err => console.warn('Latest sensor listener error:', err));
+
+    // 4. Historical readings listener
+    loadHistoricalData();
+  }
+
+  function updateSensorDisplay(data){
+    document.getElementById('tempValue').textContent = (typeof data.temperature === 'number') ? data.temperature.toFixed(1) : (data.temperature ?? '—');
+    document.getElementById('humidValue').textContent = (typeof data.humidity === 'number') ? data.humidity.toFixed(1) : (data.humidity ?? '—');
+    document.getElementById('ldrValue').textContent = (typeof data.ldr === 'number') ? data.ldr.toFixed(0) : (data.ldr ?? '—');
+    const ts = data.timestamp ? (data.timestamp.toDate ? data.timestamp.toDate() : new Date(data.timestamp)) : new Date();
+    const t = formatTimeAgo(ts);
+    document.getElementById('tempTime').textContent = t;
+    document.getElementById('humidTime').textContent = t;
+    document.getElementById('ldrTime').textContent = t;
+  }
+
+  function loadHistoricalData(){
+    document.getElementById('tableLoading').style.display = 'block';
+    document.getElementById('dataTable').style.display = 'none';
+
+    db.collection('sensorData')
+      .orderBy('timestamp', 'desc')
+      .limit(50)
+      .onSnapshot(snap => {
+        sensorDataCache = [];
+        const tbody = document.getElementById('dataTableBody');
+        tbody.innerHTML = '';
+
+        if(snap.empty){
+          document.getElementById('tableLoading').innerHTML = 'No telemetry recorded yet — connect your ESP32 or use the Simulator to log data.';
+          document.getElementById('tableLoading').style.display = 'block';
+          document.getElementById('dataTable').style.display = 'none';
+          return;
+        }
+
+        snap.forEach(doc => {
+          if(doc.id === 'latest') return;
+          const d = doc.data();
+          sensorDataCache.push(d);
+          const row = tbody.insertRow();
+          const ts = d.timestamp ? (d.timestamp.toDate ? d.timestamp.toDate() : new Date(d.timestamp)) : null;
+          const timeStr = ts ? ts.toLocaleString() : '—';
+          const tVal = (typeof d.temperature === 'number') ? d.temperature.toFixed(1) + '°' : (d.temperature ? d.temperature + '°' : '—');
+          const hVal = (typeof d.humidity === 'number') ? d.humidity.toFixed(1) + '%' : (d.humidity ? d.humidity + '%' : '—');
+          const lVal = (typeof d.ldr === 'number') ? d.ldr.toFixed(0) : (d.ldr ?? '—');
+          const bState = !!(d.bulbState ?? d.state);
+
+          row.innerHTML = `<td>${timeStr}</td>
+            <td>${tVal}</td>
+            <td>${hVal}</td>
+            <td>${lVal}</td>
+            <td><span class="badge ${bState ? 'badge-on':'badge-off'}">${bState ? 'ON':'OFF'}</span></td>
+            <td>${d.mode ?? '—'}</td>`;
+        });
+
+        if(sensorDataCache.length > 0){
+          document.getElementById('tableLoading').style.display = 'none';
+          document.getElementById('dataTable').style.display = 'table';
+        }
+      }, err => {
+        console.warn('Historical listener error:', err);
+        document.getElementById('tableLoading').innerHTML = 'Awaiting cloud telemetry.';
+      });
+  }
+
+  function toggleBulb(){
+    const next = !currentBulbState;
+    currentBulbState = next;
+    updateBulbUI(next);
+    db.collection('appliances').doc('bulb').set({
+      state: next,
+      bulbState: next,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true }).catch(err => console.error(err));
+  }
+
+  function updateBulbUI(state){
+    document.getElementById('bulbOrb').classList.toggle('on', state);
+    document.getElementById('bulbToggle').classList.toggle('on', state);
+    document.getElementById('bulbStatusText').textContent = state ? 'ON' : 'OFF';
+  }
+
+  function setMode(mode){
+    currentMode = mode;
+    updateModeUI();
+    db.collection('settings').doc('config').set({
+      mode: mode
+    }, { merge: true }).catch(err => console.error(err));
+    const currentLdr = parseFloat(document.getElementById('ldrValue').textContent);
+    if(!isNaN(currentLdr)){
+      checkAutomation(currentLdr);
+    }
+  }
+
+  function updateModeUI(){
+    document.getElementById('tabManual').classList.toggle('active', currentMode === 'manual');
+    document.getElementById('tabAuto').classList.toggle('active', currentMode === 'automatic');
+    document.getElementById('thresholdPanel').classList.toggle('show', currentMode === 'automatic');
+  }
+
+  function onThresholdInput(){
+    currentThreshold = parseInt(document.getElementById('ldrThreshold').value);
+    document.getElementById('threshVal').textContent = currentThreshold;
+  }
+
+  function updateThreshold(){
+    const threshold = parseInt(document.getElementById('ldrThreshold').value);
+    currentThreshold = threshold;
+    db.collection('settings').doc('config').set({
+      ldrThreshold: threshold
+    }, { merge: true }).catch(err => console.error(err));
+    const currentLdr = parseFloat(document.getElementById('ldrValue').textContent);
+    if(!isNaN(currentLdr)){
+      checkAutomation(currentLdr);
+    }
+  }
+
+  function checkAutomation(ldr){
+    if(currentMode === 'automatic' && typeof ldr === 'number'){
+      const shouldBeOn = ldr < currentThreshold;
+      if(shouldBeOn !== currentBulbState){
+        currentBulbState = shouldBeOn;
+        updateBulbUI(shouldBeOn);
+        db.collection('appliances').doc('bulb').set({
+          state: shouldBeOn,
+          bulbState: shouldBeOn,
+          autoTriggered: true,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true }).catch(console.error);
+      }
+    }
+  }
+
+  function exportToCSV(){
+    if(sensorDataCache.length === 0){ alert('No data to export yet.'); return; }
+    let csv = 'Timestamp,Temperature (C),Humidity (%),Light (lux),Bulb State,Mode\n';
+    sensorDataCache.forEach(d => {
+      const ts = d.timestamp ? (d.timestamp.toDate ? d.timestamp.toDate().toLocaleString() : new Date(d.timestamp).toLocaleString()) : '';
+      const bState = !!(d.bulbState ?? d.state);
+      csv += `"${ts}",${d.temperature ?? ''},${d.humidity ?? ''},${d.ldr ?? ''},${bState ? 'ON':'OFF'},${d.mode ?? ''}\n`;
+    });
+    const el = document.createElement('a');
+    el.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+    el.download = `aether_telemetry_${new Date().toISOString().split('T')[0]}.csv`;
+    el.style.display = 'none';
+    document.body.appendChild(el); el.click(); document.body.removeChild(el);
+  }
+
+  function formatTimeAgo(date){
+    const s = Math.floor((new Date() - date)/1000);
+    if(s < 60) return `${Math.max(1, s)}s ago`;
+    const m = Math.floor(s/60);
+    if(m < 60) return `${m}m ago`;
+    const h = Math.floor(m/60);
+    if(h < 24) return `${h}h ago`;
+    return date.toLocaleDateString();
+  }
+
+  function simulateSensorReading(){
+    const temp = parseFloat((24 + Math.random() * 5).toFixed(1));
+    const hum = parseFloat((50 + Math.random() * 20).toFixed(1));
+    const ldr = Math.floor(200 + Math.random() * 800);
+    let bulb = currentBulbState;
+    if(currentMode === 'automatic'){
+      bulb = ldr < currentThreshold;
+    }
+
+    const payload = {
+      temperature: temp,
+      humidity: hum,
+      ldr: ldr,
+      bulbState: bulb,
+      mode: currentMode,
+      timestamp: firebase.firestore.FieldValue.serverTimestamp()
+    };
+
+    db.collection('sensorData').doc('latest').set(payload);
+    db.collection('sensorData').add(payload);
+  }
+
+  function seedSampleData(){
+    const now = Date.now();
+    for(let i = 10; i >= 1; i--){
+      const pastTime = new Date(now - i * 120000);
+      const ldr = Math.floor(300 + Math.random() * 500);
+      const payload = {
+        temperature: parseFloat((24 + Math.random() * 3).toFixed(1)),
+        humidity: parseFloat((55 + Math.random() * 10).toFixed(1)),
+        ldr: ldr,
+        bulbState: ldr < currentThreshold,
+        mode: currentMode,
+        timestamp: pastTime
+      };
+      db.collection('sensorData').add(payload);
+    }
+    simulateSensorReading();
+  }
+</script>
+</body>
+</html>
